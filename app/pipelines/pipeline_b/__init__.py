@@ -1,0 +1,1 @@
+# Pipeline B package initialization
