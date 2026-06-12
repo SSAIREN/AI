@@ -1,0 +1,24 @@
+{
+  "sessions": {
+    "019eb9c4-64a5-79a3-ae00-8caa47f83fc7": {
+      "ordinary_no_progress_guard": {
+        "fingerprint": "ordinary|응, 간단히 로그만 남기도록 추가했습니다. 로그 남는 지점은 이 정도입니다. - `post /runs` 접수 - `call_id`, `user_id`, `pre_detected_type`, `pre_detected_risk`, `execute_tools` - job 시작/완료/실패 - 최종 `scenario`, `risk_level`, `risk_score`, `tools`, `actions` - detector 결과 - `scenario`, `confidence`, `keywords` - analyzer 결과 - `risk_level`, `risk_score`, `tools_to_call` - tool 실행 - tool 시작/완료/status - tool client - 실제 호출인지 `dry_run`인지 - payload 전체는 안 찍고 key 목록과 `call_id/user_id`만 찍음 수정한 파일: - `app/api/v1/pipeline_a.py` - `app/pipelines/pipeline_a/nodes.py` - `app/pipelines/pipeline_a/tools/client.py` 검증도 했습니다. ```text py_compile ok job 실행 ok succeeded / institution_impersonation 확인 ``` 중요한 건 통화 전문 같은 민감 텍스트는 로그에 직접 안 남기게 해뒀습니다.",
+        "first_seen_at": "2026-06-12T03:49:55.210Z",
+        "last_seen_at": "2026-06-12T03:49:55.210Z",
+        "repeat_count": 1,
+        "last_turn_id": "019eb9f2-2242-73f3-a024-10b4a93623aa",
+        "last_thread_id": null
+      }
+    },
+    "019eb9da-7805-7892-9c09-4e6e4babdc72": {
+      "ordinary_no_progress_guard": {
+        "fingerprint": "ordinary|프로젝트 루트에서 이렇게 실행하면 됩니다: ```powershell cd c:\\users\\hsst1\\downloads\\files\\ai python -m venv .venv .\\.venv\\scripts\\activate.ps1 pip install -r requirements.txt python run.py ``` 실행되면 기본 주소는: ```text http://127.0.0.1:8000 ``` api 문서는 여기서 확인하면 됩니다: ```text http://127.0.0.1:8000/docs ``` pipeline a 호출 예시: ```powershell invoke-restmethod ` -uri \"http://127.0.0.1:8000/api/v1/pipeline-a/run\" ` -method post ` -contenttype \"application/json\" ` -body '{\"message\":\"경찰이라고 전화가 와서 계좌를 확인하라고 했어요\",\"execute_tools\":false}' ``` pipeline b 호출 예시: ```powershell invoke-restmethod ` -uri \"http://127.0.0.1:8000/api/v1/pipeline-b/run\" ` -method post ` -contenttype \"application/json\" ` -body '{\"message\":\"police said i need to transfer money\"}' ``` `.env`는 이미 있어서 그대로 쓰면 되고, openai를 실제로 쓰려면 `.env`의 `openai_api_key`를 본인 키로 설정하면 됩니다. 방금 `import app.main`은 확인했고 정상 import 됩니다. 다만 현재 python 3.14에서는 langchain/pydantic 경고가 하나 뜰 수 있어서, 문제 생기면 python 3.11 또는 3.12 가상환경을 권장합니다.",
+        "first_seen_at": "2026-06-12T03:23:30.281Z",
+        "last_seen_at": "2026-06-12T03:23:30.281Z",
+        "repeat_count": 1,
+        "last_turn_id": "019eb9da-9745-7322-adf0-62d198911a0f",
+        "last_thread_id": null
+      }
+    }
+  }
+}
