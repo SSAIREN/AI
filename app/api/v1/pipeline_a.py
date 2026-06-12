@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal
 from uuid import uuid4
@@ -10,6 +11,7 @@ from starlette import status
 from app.pipelines.pipeline_a.graph import app as pipeline_a_graph
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 JobStatus = Literal["PENDING", "RUNNING", "SUCCEEDED", "FAILED"]
 _JOBS: Dict[str, Dict[str, Any]] = {}
@@ -219,6 +221,14 @@ async def _run_graph(payload: PipelineAInput, call_id: str) -> PipelineAOutput:
 
 async def _process_job(call_id: str, payload: PipelineAInput) -> None:
     _JOBS[call_id].update(status="RUNNING", updated_at=_now_iso())
+    logger.info(
+        "[pipeline_a] job started call_id=%s user_id=%s pre_type=%s pre_risk=%.3f execute_tools=%s",
+        call_id,
+        payload.user_id,
+        payload.pre_detected_type,
+        payload.pre_detected_risk,
+        payload.execute_tools,
+    )
     try:
         result = await _run_graph(payload, call_id)
         _JOBS[call_id].update(
@@ -229,6 +239,16 @@ async def _process_job(call_id: str, payload: PipelineAInput) -> None:
             error=result.error,
             updated_at=_now_iso(),
         )
+        logger.info(
+            "[pipeline_a] job finished call_id=%s status=%s scenario=%s risk_level=%s risk_score=%.3f tools=%s actions=%s",
+            call_id,
+            "FAILED" if result.error else "SUCCEEDED",
+            result.detected_scenario,
+            result.risk_level,
+            result.risk_score,
+            result.tools_to_call,
+            result.final_actions_taken,
+        )
     except Exception as exc:
         _JOBS[call_id].update(
             status="FAILED",
@@ -238,6 +258,7 @@ async def _process_job(call_id: str, payload: PipelineAInput) -> None:
             error=str(exc),
             updated_at=_now_iso(),
         )
+        logger.exception("[pipeline_a] job failed call_id=%s error=%s", call_id, exc)
 
 
 @router.post(
@@ -270,6 +291,14 @@ async def start_pipeline_a_run(
         "result": None,
         "error": None,
     }
+    logger.info(
+        "[pipeline_a] job accepted call_id=%s user_id=%s pre_type=%s pre_risk=%.3f execute_tools=%s",
+        call_id,
+        payload.user_id,
+        payload.pre_detected_type,
+        payload.pre_detected_risk,
+        payload.execute_tools,
+    )
     background_tasks.add_task(_process_job, call_id, payload)
     return PipelineAJobAccepted(
         call_id=call_id,
@@ -292,7 +321,9 @@ async def get_pipeline_a_run(
 ) -> PipelineAJobStatus:
     job = _JOBS.get(call_id)
     if not job:
+        logger.info("[pipeline_a] job lookup miss call_id=%s", call_id)
         raise HTTPException(status_code=404, detail="Pipeline A 작업을 찾을 수 없습니다.")
+    logger.info("[pipeline_a] job lookup call_id=%s status=%s", call_id, job["status"])
 
     return PipelineAJobStatus(
         call_id=call_id,

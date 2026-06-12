@@ -171,6 +171,14 @@ Conversation:
     elif detected_scenario == "UNKNOWN" and fallback_result["detected_scenario"] != "UNKNOWN":
         result = fallback_result
 
+    logger.info(
+        "[pipeline_a.detector] call_id=%s scenario=%s confidence=%.3f keywords=%s",
+        state.get("call_id"),
+        result.get("detected_scenario", "UNKNOWN"),
+        float(result.get("scenario_confidence", 0.0)),
+        result.get("detected_keywords", []),
+    )
+
     return {
         **state,
         "conversation_text": text,
@@ -215,6 +223,16 @@ Conversation:
 
     detail_scores = result.get("scenario_detail_scores", {})
     detail_scores = {key: float(detail_scores.get(key, 0.0)) for key in DETAIL_SCORE_KEYS}
+    tools_to_call = [tool for tool in result.get("tools_to_call", []) if tool in TOOL_REGISTRY]
+
+    logger.info(
+        "[pipeline_a.analyzer] call_id=%s scenario=%s risk_level=%s risk_score=%.3f tools=%s",
+        state.get("call_id"),
+        scenario,
+        _risk_level(blended_score),
+        blended_score,
+        tools_to_call,
+    )
 
     return {
         **state,
@@ -222,7 +240,7 @@ Conversation:
         "risk_level": _risk_level(blended_score),
         "scenario_detail_scores": detail_scores,
         "tool_call_reasons": list(result.get("tool_call_reasons", [])),
-        "tools_to_call": [tool for tool in result.get("tools_to_call", []) if tool in TOOL_REGISTRY],
+        "tools_to_call": tools_to_call,
         "error": None,
     }
 
@@ -254,11 +272,19 @@ def _tool_kwargs(state: PipelineAState) -> Dict[str, Any]:
 async def _run_tool(tool_name: str, kwargs: Dict[str, Any]) -> Dict[str, Any]:
     fn = TOOL_REGISTRY.get(tool_name)
     if fn is None:
+        logger.warning("[pipeline_a.executor] tool=%s status=NOT_FOUND", tool_name)
         return {"tool": tool_name, "status": "NOT_FOUND"}
 
     try:
+        logger.info("[pipeline_a.executor] tool=%s started call_id=%s", tool_name, kwargs.get("call_id"))
         result = await fn(**kwargs)
         status = result.get("status") or result.get("result", {}).get("status") or "SUCCESS"
+        logger.info(
+            "[pipeline_a.executor] tool=%s finished call_id=%s status=%s",
+            tool_name,
+            kwargs.get("call_id"),
+            status,
+        )
         return {"status": status, **result}
     except Exception as exc:
         logger.warning("[pipeline_a.executor] tool=%s failed: %s", tool_name, exc)
@@ -268,6 +294,8 @@ async def _run_tool(tool_name: str, kwargs: Dict[str, Any]) -> Dict[str, Any]:
 async def tool_executor(state: PipelineAState) -> PipelineAState:
     tools_to_call = state.get("tools_to_call", [])
     kwargs = _tool_kwargs(state)
+
+    logger.info("[pipeline_a.executor] call_id=%s tools=%s", state.get("call_id"), tools_to_call)
 
     results = await asyncio.gather(*[_run_tool(tool, kwargs) for tool in tools_to_call])
     actions = [f"{result.get('status', 'UNKNOWN')} {result.get('tool', 'unknown')}" for result in results]
