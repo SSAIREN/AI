@@ -37,8 +37,8 @@ Conversation:
         result = fallback_result
 
     logger.info(
-        "[pipeline_a.detector] call_id=%s scenario=%s confidence=%.3f keywords=%s demo_mode=True",
-        state.get("call_id"),
+        "[pipeline_a.detector] session_id=%s scenario=%s confidence=%.3f keywords=%s demo_mode=True",
+        state.get("session_id"),
         result.get("detected_scenario", "UNKNOWN"),
         float(result.get("scenario_confidence", 0.0)),
         result.get("detected_keywords", []),
@@ -94,8 +94,8 @@ Conversation:
     detail_scores = {key: float(detail_scores.get(key, 0.0)) for key in DETAIL_SCORE_KEYS}
 
     logger.info(
-        "[pipeline_a.analyzer] call_id=%s scenario=%s risk_level=%s risk_score=%.3f tools=%s demo_mode=True",
-        state.get("call_id"),
+        "[pipeline_a.analyzer] session_id=%s scenario=%s risk_level=%s risk_score=%.3f tools=%s demo_mode=True",
+        state.get("session_id"),
         scenario,
         _risk_level(blended_score),
         blended_score,

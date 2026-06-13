@@ -10,10 +10,9 @@ logger = logging.getLogger(__name__)
 
 def dry_run(tool: str, **payload: Any) -> Dict[str, Any]:
     logger.info(
-        "[pipeline_a.tool_client] dry_run tool=%s call_id=%s user_id=%s payload_keys=%s",
+        "[pipeline_a.tool_client] dry_run tool=%s session_id=%s payload_keys=%s",
         tool,
-        payload.get("call_id") or payload.get("callId"),
-        payload.get("user_id") or payload.get("userId"),
+        payload.get("session_id") or payload.get("sessionId"),
         sorted(payload.keys()),
     )
     return {
@@ -21,8 +20,7 @@ def dry_run(tool: str, **payload: Any) -> Dict[str, Any]:
         "status": "DRY_RUN",
         "message": "External Spring integration is not configured or execute_tools is false.",
         "payload": {
-            "call_id": payload.get("call_id"),
-            "user_id": payload.get("user_id"),
+            "session_id": payload.get("session_id"),
             "detected_scenario": payload.get("detected_scenario"),
             "risk_score": payload.get("risk_score"),
         },
