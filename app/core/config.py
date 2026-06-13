@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     # Optional Pipeline A external action server
     SPRING_API_URL: str = ""
     SPRING_INTERNAL_API_KEY: str = ""
+    SPRING_CALLBACK_PATH: str = "/ai/use/callback"
 
     @field_validator("DEBUG", mode="before")
     @classmethod
