@@ -1,11 +1,12 @@
 import json
 import logging
+import os
 from typing import Any
+
+from app.core.config import settings
 
 from langchain_core.messages import BaseMessage
 from langchain_openai import ChatOpenAI
-
-from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -14,11 +15,25 @@ def get_pipeline_a_llm(*, temperature: float = 0.0, max_tokens: int = 800) -> Ch
     """Return the configured OpenAI chat model, or None when the key is not configured.
     Routes through the custom base URL if configured (e.g. GMS OpenRouter).
     """
+    logger.info(
+        "LangSmith ENV Check: TRACING=%s, ENDPOINT=%s, PROJECT=%s, API_KEY_exists=%s",
+        os.getenv("LANGCHAIN_TRACING_V2"),
+        os.getenv("LANGCHAIN_ENDPOINT"),
+        os.getenv("LANGCHAIN_PROJECT"),
+        bool(os.getenv("LANGCHAIN_API_KEY")),
+    )
+
     api_key = settings.OPENAI_API_KEY.strip()
     if not api_key or api_key.startswith("your-"):
         return None
 
     base_url = settings.OPENAI_API_BASE.strip() if settings.OPENAI_API_BASE else None
+
+    # gpt-5-nano is a reasoning model. Reasoning tokens are counted towards max_tokens,
+    # so we must increase the limit to at least 4096 to prevent truncation.
+    if settings.OPENAI_MODEL == "gpt-5-nano":
+        max_tokens = max(max_tokens, 4096)
+
 
     return ChatOpenAI(
         api_key=api_key,
