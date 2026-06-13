@@ -16,3 +16,6 @@ env/
 # IDEs
 .vscode/
 .idea/
+
+# Local testing playground
+playground/

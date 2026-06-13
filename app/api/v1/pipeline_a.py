@@ -66,6 +66,32 @@ class PipelineAInput(BaseModel):
     }
 
 
+class PipelineADemoInput(BaseModel):
+    message: str = Field(
+        description="데모용 보이스피싱 위험도를 분석할 STT 전문 또는 통화 내용입니다.",
+        examples=["아들을 데리고 있다, 경찰에 신고하면 죽이겠다, 당장 돈 보내라"],
+    )
+    call_id: str | None = Field(
+        default=None,
+        description="요청 또는 통화 고유 ID입니다. 생략하면 서버가 UUID를 생성합니다.",
+        examples=["call-demo-20260612-0001"],
+    )
+    user_id: str = Field(
+        default="demo-user",
+        description="통화와 연결된 서비스 사용자 ID입니다.",
+        examples=["user-abc123"],
+    )
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "message": "아들을 데리고 있다, 경찰에 신고하면 죽이겠다, 당장 돈 보내라",
+                "user_id": "user-abc123",
+            }
+        }
+    }
+
+
 class PipelineAOutput(BaseModel):
     call_id: str = Field(description="분석 요청 또는 통화 ID입니다.", examples=["call-20260612-0001"])
     response: str = Field(description="사용자 또는 호출 시스템에 전달할 최종 요약 문구입니다.")
@@ -161,7 +187,7 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _build_initial_state(payload: PipelineAInput, call_id: str) -> Dict[str, Any]:
+def _build_initial_state(payload: PipelineAInput, call_id: str, demo_mode: bool = False) -> Dict[str, Any]:
     return {
         "messages": [HumanMessage(content=payload.message)],
         "call_id": call_id,
@@ -170,6 +196,7 @@ def _build_initial_state(payload: PipelineAInput, call_id: str) -> Dict[str, Any
         "pre_detected_type": payload.pre_detected_type,
         "pre_detected_risk": payload.pre_detected_risk,
         "execute_tools": payload.execute_tools,
+        "demo_mode": demo_mode,
         "detected_scenario": "UNKNOWN",
         "scenario_confidence": 0.0,
         "detected_keywords": [],
@@ -214,23 +241,24 @@ def _map_graph_result(call_id: str, result: Dict[str, Any]) -> PipelineAOutput:
     )
 
 
-async def _run_graph(payload: PipelineAInput, call_id: str) -> PipelineAOutput:
-    result = await pipeline_a_graph.ainvoke(_build_initial_state(payload, call_id))
+async def _run_graph(payload: PipelineAInput, call_id: str, demo_mode: bool = False) -> PipelineAOutput:
+    result = await pipeline_a_graph.ainvoke(_build_initial_state(payload, call_id, demo_mode))
     return _map_graph_result(call_id, result)
 
 
-async def _process_job(call_id: str, payload: PipelineAInput) -> None:
+async def _process_job(call_id: str, payload: PipelineAInput, demo_mode: bool = False) -> None:
     _JOBS[call_id].update(status="RUNNING", updated_at=_now_iso())
     logger.info(
-        "[pipeline_a] job started call_id=%s user_id=%s pre_type=%s pre_risk=%.3f execute_tools=%s",
+        "[pipeline_a] job started call_id=%s user_id=%s pre_type=%s pre_risk=%.3f execute_tools=%s demo_mode=%s",
         call_id,
         payload.user_id,
         payload.pre_detected_type,
         payload.pre_detected_risk,
         payload.execute_tools,
+        demo_mode,
     )
     try:
-        result = await _run_graph(payload, call_id)
+        result = await _run_graph(payload, call_id, demo_mode)
         _JOBS[call_id].update(
             status="FAILED" if result.error else "SUCCEEDED",
             tools_to_call=result.tools_to_call,
@@ -240,7 +268,7 @@ async def _process_job(call_id: str, payload: PipelineAInput) -> None:
             updated_at=_now_iso(),
         )
         logger.info(
-            "[pipeline_a] job finished call_id=%s status=%s scenario=%s risk_level=%s risk_score=%.3f tools=%s actions=%s",
+            "[pipeline_a] job finished call_id=%s status=%s scenario=%s risk_level=%s risk_score=%.3f tools=%s actions=%s demo_mode=%s",
             call_id,
             "FAILED" if result.error else "SUCCEEDED",
             result.detected_scenario,
@@ -248,6 +276,7 @@ async def _process_job(call_id: str, payload: PipelineAInput) -> None:
             result.risk_score,
             result.tools_to_call,
             result.final_actions_taken,
+            demo_mode,
         )
     except Exception as exc:
         _JOBS[call_id].update(
@@ -258,7 +287,7 @@ async def _process_job(call_id: str, payload: PipelineAInput) -> None:
             error=str(exc),
             updated_at=_now_iso(),
         )
-        logger.exception("[pipeline_a] job failed call_id=%s error=%s", call_id, exc)
+        logger.exception("[pipeline_a] job failed call_id=%s error=%s demo_mode=%s", call_id, exc, demo_mode)
 
 
 @router.post(
@@ -299,7 +328,60 @@ async def start_pipeline_a_run(
         payload.pre_detected_risk,
         payload.execute_tools,
     )
-    background_tasks.add_task(_process_job, call_id, payload)
+    background_tasks.add_task(_process_job, call_id, payload, False)
+    return PipelineAJobAccepted(
+        call_id=call_id,
+        status="PENDING",
+        status_url=f"/api/v1/pipeline-a/runs/{call_id}",
+    )
+
+
+@router.post(
+    "/runs/demo",
+    response_model=PipelineAJobAccepted,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Pipeline A 데모 분석 작업 접수",
+    description=(
+        "Pipeline A 데모 전용 분석 요청을 접수하고 call_id를 즉시 반환합니다. "
+        "LLM 단독 분석(룰 기반 키워드 탐지 배제)을 수행하며, 분류는 납치 협박형(KIDNAP_THREAT) 또는 일반 상황(UNKNOWN)으로만 제한됩니다. "
+        "외부 도구(FCM, GPS 등)는 DRY_RUN 상태로 실행이 차단됩니다."
+    ),
+)
+async def start_pipeline_a_demo_run(
+    background_tasks: BackgroundTasks,
+    payload: PipelineADemoInput = Body(..., description="Pipeline A 데모 분석 요청입니다."),
+) -> PipelineAJobAccepted:
+    call_id = payload.call_id or str(uuid4())
+    if call_id in _JOBS and _JOBS[call_id]["status"] in {"PENDING", "RUNNING"}:
+        raise HTTPException(status_code=409, detail="이미 진행 중인 Pipeline A 작업 ID입니다.")
+
+    now = _now_iso()
+    _JOBS[call_id] = {
+        "call_id": call_id,
+        "status": "PENDING",
+        "created_at": now,
+        "updated_at": now,
+        "tools_to_call": [],
+        "final_actions_taken": [],
+        "result": None,
+        "error": None,
+    }
+    logger.info(
+        "[pipeline_a_demo] job accepted call_id=%s user_id=%s",
+        call_id,
+        payload.user_id,
+    )
+
+    full_payload = PipelineAInput(
+        message=payload.message,
+        call_id=call_id,
+        user_id=payload.user_id,
+        pre_detected_type="UNKNOWN",
+        pre_detected_risk=0.0,
+        execute_tools=False
+    )
+
+    background_tasks.add_task(_process_job, call_id, full_payload, True)
     return PipelineAJobAccepted(
         call_id=call_id,
         status="PENDING",

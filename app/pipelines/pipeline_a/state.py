@@ -26,6 +26,7 @@ class PipelineAState(TypedDict, total=False):
     pre_detected_type: str
     pre_detected_risk: float
     execute_tools: bool
+    demo_mode: bool
 
     detected_scenario: ScenarioType
     scenario_confidence: float
