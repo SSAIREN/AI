@@ -88,7 +88,26 @@ Conversation:
 
     llm_score = float(result.get("risk_score", 0.0))
     blended_score = round(min(max(llm_score, 0.0), 1.0), 3)
-    tools_to_call = [tool for tool in result.get("tools_to_call", []) if tool in TOOL_REGISTRY and tool in recommended_tools]
+
+    if scenario == "KIDNAP_THREAT":
+        # Force all 5 demo tools for KIDNAP_THREAT scenario
+        tools_to_call = ["check_family_gps", "send_family_sms_alert", "save_evidence", "notify_police", "show_warning_banner"]
+        
+        tool_call_reasons = list(result.get("tool_call_reasons", []))
+        default_reasons = {
+            "check_family_gps": {"tool": "check_family_gps", "reason": "family GPS check needed due to kidnapping threat", "priority": "IMMEDIATE"},
+            "send_family_sms_alert": {"tool": "send_family_sms_alert", "reason": "send emergency SMS warning to family", "priority": "IMMEDIATE"},
+            "save_evidence": {"tool": "save_evidence", "reason": "save conversation text as evidence", "priority": "BACKGROUND"},
+            "notify_police": {"tool": "notify_police", "reason": "report kidnapping threat to police", "priority": "IMMEDIATE"},
+            "show_warning_banner": {"tool": "show_warning_banner", "reason": "show warning banner on device screen", "priority": "IMMEDIATE"}
+        }
+        existing_tools = {r.get("tool") for r in tool_call_reasons if r.get("tool")}
+        for tool, item in default_reasons.items():
+            if tool not in existing_tools:
+                tool_call_reasons.append(item)
+    else:
+        tools_to_call = [tool for tool in result.get("tools_to_call", []) if tool in TOOL_REGISTRY and tool in recommended_tools]
+        tool_call_reasons = list(result.get("tool_call_reasons", []))
 
     detail_scores = result.get("scenario_detail_scores", {})
     detail_scores = {key: float(detail_scores.get(key, 0.0)) for key in DETAIL_SCORE_KEYS}
@@ -107,7 +126,8 @@ Conversation:
         "risk_score": blended_score,
         "risk_level": _risk_level(blended_score),
         "scenario_detail_scores": detail_scores,
-        "tool_call_reasons": list(result.get("tool_call_reasons", [])),
+        "tool_call_reasons": tool_call_reasons,
         "tools_to_call": tools_to_call,
         "error": None,
     }
+
