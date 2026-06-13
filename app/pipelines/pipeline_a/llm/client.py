@@ -12,27 +12,17 @@ logger = logging.getLogger(__name__)
 
 def get_pipeline_a_llm(*, temperature: float = 0.0, max_tokens: int = 800) -> ChatOpenAI | None:
     """Return the configured OpenAI chat model, or None when the key is not configured.
-    If a Google Gemini key is detected, it automatically routes through Gemini's OpenAI-compatible endpoint.
+    Routes through the custom base URL if configured (e.g. GMS OpenRouter).
     """
     api_key = settings.OPENAI_API_KEY.strip()
     if not api_key or api_key.startswith("your-"):
         return None
 
-    if api_key.startswith("AIzaSy"):
-        # Gemini's thinking/reasoning tokens are counted towards max_tokens in the compatibility layer.
-        # We increase max_tokens to at least 2048 to prevent LengthFinishReasonError.
-        gemini_max_tokens = max(max_tokens, 2048)
-        return ChatOpenAI(
-            api_key=api_key,
-            base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-            model="gemini-3.5-flash",
-            temperature=temperature,
-            max_tokens=gemini_max_tokens,
-            model_kwargs={"response_format": {"type": "json_object"}},
-        )
+    base_url = settings.OPENAI_API_BASE.strip() if settings.OPENAI_API_BASE else None
 
     return ChatOpenAI(
         api_key=api_key,
+        base_url=base_url or None,
         model=settings.OPENAI_MODEL,
         temperature=temperature,
         max_tokens=max_tokens,

@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     
     # API Keys
     OPENAI_API_KEY: str = ""
+    OPENAI_API_BASE: str = ""
     OPENAI_MODEL: str = "gpt-5-nano"
 
     # Optional Pipeline A external action server
