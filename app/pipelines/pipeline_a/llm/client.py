@@ -34,6 +34,7 @@ def get_pipeline_a_llm(*, temperature: float = 0.0, max_tokens: int = 800) -> Ch
     if settings.OPENAI_MODEL == "gpt-5-nano":
         max_tokens = max(max_tokens, 4096)
 
+
     return ChatOpenAI(
         api_key=api_key,
         base_url=base_url or None,
