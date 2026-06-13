@@ -20,8 +20,7 @@ class PipelineAState(TypedDict, total=False):
 
     messages: Annotated[Sequence[BaseMessage], add_messages]
 
-    call_id: str
-    user_id: str
+    session_id: str
     conversation_text: str
     pre_detected_type: str
     pre_detected_risk: float
