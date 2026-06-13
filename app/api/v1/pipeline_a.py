@@ -233,7 +233,21 @@ def _map_graph_result(session_id: str, result: Dict[str, Any]) -> PipelineAOutpu
 
 async def _run_graph(payload: PipelineAInput, session_id: str, demo_mode: bool = False) -> PipelineAOutput:
     result = await pipeline_a_graph.ainvoke(_build_initial_state(payload, session_id, demo_mode))
-    return _map_graph_result(session_id, result)
+    output = _map_graph_result(session_id, result)
+    logger.info(
+        "[pipeline_a] 그래프 최종 반환값 session_id=%s demo_mode=%s scenario=%s risk_level=%s risk_score=%.3f "
+        "tools_to_call=%s final_actions_taken=%s tool_results=%s response=%s",
+        session_id,
+        demo_mode,
+        output.detected_scenario,
+        output.risk_level,
+        output.risk_score,
+        output.tools_to_call,
+        output.final_actions_taken,
+        output.tool_results,
+        output.response,
+    )
+    return output
 
 
 async def _push_demo_callback(session_id: str, result: PipelineAOutput) -> None:
@@ -252,6 +266,7 @@ async def _push_demo_callback(session_id: str, result: PipelineAOutput) -> None:
         "finalActionsTaken": result.final_actions_taken,
         "response": result.response,
     }
+    logger.info("[pipeline_a_demo] callback 전송 본문 session_id=%s url=%s body=%s", session_id, url, body)
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(10.0)) as client:
             response = await client.post(
@@ -263,7 +278,11 @@ async def _push_demo_callback(session_id: str, result: PipelineAOutput) -> None:
                 },
             )
             response.raise_for_status()
-        logger.info("[pipeline_a_demo] callback pushed session_id=%s url=%s", session_id, url)
+            response_body = response.text
+        logger.info(
+            "[pipeline_a_demo] callback pushed session_id=%s url=%s http_status=%s response=%s",
+            session_id, url, response.status_code, response_body,
+        )
     except Exception as exc:
         logger.warning("[pipeline_a_demo] callback push failed session_id=%s error=%s", session_id, exc)
 
