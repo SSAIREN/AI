@@ -3,21 +3,19 @@ from typing import Any, Dict, List
 from app.pipelines.pipeline_a.tools.client import get, post
 
 
-async def check_family_gps(user_id: str, call_id: str, execute_tools: bool = False, **kwargs: Any) -> Dict[str, Any]:
+async def check_family_gps(session_id: str, execute_tools: bool = False, **kwargs: Any) -> Dict[str, Any]:
     result = await post(
         "/ai/use/family/gps",
         execute_tools=execute_tools,
         body={
-            "callId": call_id,
-            "userId": user_id,
+            "sessionId": session_id,
         },
     )
     return {"tool": "check_family_gps", "result": result}
 
 
 async def send_family_sms_alert(
-    user_id: str,
-    call_id: str,
+    session_id: str,
     detected_scenario: str,
     situation_summary: str,
     execute_tools: bool = False,
@@ -27,20 +25,17 @@ async def send_family_sms_alert(
         "/ai/use/notifications/family-alert",
         execute_tools=execute_tools,
         body={
-            "callId": call_id,
-            "userId": user_id,
+            "sessionId": session_id,
             "scenario": detected_scenario,
             "situationSummary": situation_summary,
             "riskScore": kwargs.get("risk_score", 0.0),
-            "guardianIds": kwargs.get("guardian_ids", []),
         },
     )
     return {"tool": "send_family_sms_alert", "result": result}
 
 
 async def notify_police(
-    user_id: str,
-    call_id: str,
+    session_id: str,
     risk_score: float,
     situation_summary: str,
     execute_tools: bool = False,
@@ -50,8 +45,7 @@ async def notify_police(
         "/ai/use/police/report",
         execute_tools=execute_tools,
         body={
-            "callId": call_id,
-            "userId": user_id,
+            "sessionId": session_id,
             "riskScore": int(risk_score * 100),
             "incidentType": "VOICE_PHISHING",
             "summary": situation_summary,
@@ -61,8 +55,7 @@ async def notify_police(
 
 
 async def save_evidence(
-    call_id: str,
-    user_id: str,
+    session_id: str,
     conversation_text: str,
     risk_score: float,
     detected_scenario: str,
@@ -73,8 +66,7 @@ async def save_evidence(
         "/ai/use/evidence",
         execute_tools=execute_tools,
         body={
-            "callId": call_id,
-            "userId": user_id,
+            "sessionId": session_id,
             "conversationText": conversation_text,
             "riskScore": risk_score,
             "scenario": detected_scenario,
@@ -84,8 +76,7 @@ async def save_evidence(
 
 
 async def verify_official_institution(
-    user_id: str,
-    call_id: str,
+    session_id: str,
     detected_keywords: List[str],
     execute_tools: bool = False,
     **kwargs: Any,
@@ -96,8 +87,7 @@ async def verify_official_institution(
 
 
 async def show_warning_banner(
-    user_id: str,
-    call_id: str,
+    session_id: str,
     detected_scenario: str,
     execute_tools: bool = False,
     **kwargs: Any,
@@ -106,8 +96,7 @@ async def show_warning_banner(
         "/ai/use/notifications/warning-banner",
         execute_tools=execute_tools,
         body={
-            "callId": call_id,
-            "userId": user_id,
+            "sessionId": session_id,
             "scenario": detected_scenario,
             "riskScore": kwargs.get("risk_score", 0.0),
             "situationSummary": kwargs.get("situation_summary", ""),
@@ -118,25 +107,22 @@ async def show_warning_banner(
 
 
 async def verify_family_location(
-    user_id: str,
-    call_id: str,
+    session_id: str,
     execute_tools: bool = False,
     **kwargs: Any,
 ) -> Dict[str, Any]:
-    result = await get(f"/users/{user_id}/family-contacts", execute_tools=execute_tools)
+    result = await get(f"/sessions/{session_id}/family-contacts", execute_tools=execute_tools)
     return {"tool": "verify_family_location", "result": result}
 
 
-async def show_transfer_warning(user_id: str, call_id: str, execute_tools: bool = False, **kwargs: Any) -> Dict[str, Any]:
+async def show_transfer_warning(session_id: str, execute_tools: bool = False, **kwargs: Any) -> Dict[str, Any]:
     result = await post(
         "/notifications/fcm",
         execute_tools=execute_tools,
         body={
-            "senderId": user_id,
-            "targetIds": [user_id],
+            "sessionId": session_id,
             "payload": {
                 "type": "TRANSFER_BLOCK_WARNING",
-                "callId": call_id,
                 "message": "보이스피싱 의심 송금입니다. 이체를 중단하고 공식 연락처로 확인하세요.",
             },
         },

@@ -264,8 +264,8 @@ Conversation:
     sanitized = _validate_and_sanitize_result(result, text)
 
     logger.info(
-        "[pipeline_a.detector] call_id=%s scenario=%s confidence=%.3f keywords=%s demo_mode=False (Unified)",
-        state.get("call_id"),
+        "[pipeline_a.detector] session_id=%s scenario=%s confidence=%.3f keywords=%s demo_mode=False (Unified)",
+        state.get("session_id"),
         sanitized.get("detected_scenario", "UNKNOWN"),
         float(sanitized.get("scenario_confidence", 0.0)),
         sanitized.get("detected_keywords", []),
@@ -307,8 +307,8 @@ async def _prod_scenario_analyzer(state: PipelineAState) -> PipelineAState:
     tools_to_call = list(state.get("tools_to_call", []))
 
     logger.info(
-        "[pipeline_a.analyzer] call_id=%s scenario=%s risk_level=%s risk_score=%.3f tools=%s demo_mode=False (Passthrough)",
-        state.get("call_id"),
+        "[pipeline_a.analyzer] session_id=%s scenario=%s risk_level=%s risk_score=%.3f tools=%s demo_mode=False (Passthrough)",
+        state.get("session_id"),
         scenario,
         _risk_level(blended_score),
         blended_score,
@@ -343,8 +343,7 @@ def route_by_risk(state: PipelineAState) -> str:
 
 def _tool_kwargs(state: PipelineAState) -> Dict[str, Any]:
     return {
-        "user_id": state.get("user_id", "demo-user"),
-        "call_id": state.get("call_id", "unknown-call"),
+        "session_id": state.get("session_id", "unknown-session"),
         "detected_scenario": state.get("detected_scenario", "UNKNOWN"),
         "detected_keywords": state.get("detected_keywords", []),
         "situation_summary": state.get("situation_summary", ""),
@@ -361,13 +360,13 @@ async def _run_tool(tool_name: str, kwargs: Dict[str, Any]) -> Dict[str, Any]:
         return {"tool": tool_name, "status": "NOT_FOUND"}
 
     try:
-        logger.info("[pipeline_a.executor] tool=%s started call_id=%s", tool_name, kwargs.get("call_id"))
+        logger.info("[pipeline_a.executor] tool=%s started session_id=%s", tool_name, kwargs.get("session_id"))
         result = await fn(**kwargs)
         status = result.get("status") or result.get("result", {}).get("status") or "SUCCESS"
         logger.info(
-            "[pipeline_a.executor] tool=%s finished call_id=%s status=%s",
+            "[pipeline_a.executor] tool=%s finished session_id=%s status=%s",
             tool_name,
-            kwargs.get("call_id"),
+            kwargs.get("session_id"),
             status,
         )
         return {"status": status, **result}
@@ -380,7 +379,7 @@ async def tool_executor(state: PipelineAState) -> PipelineAState:
     tools_to_call = state.get("tools_to_call", [])
     kwargs = _tool_kwargs(state)
 
-    logger.info("[pipeline_a.executor] call_id=%s tools=%s", state.get("call_id"), tools_to_call)
+    logger.info("[pipeline_a.executor] session_id=%s tools=%s", state.get("session_id"), tools_to_call)
 
     results = await asyncio.gather(*[_run_tool(tool, kwargs) for tool in tools_to_call])
     actions = [f"{result.get('status', 'UNKNOWN')} {result.get('tool', 'unknown')}" for result in results]
