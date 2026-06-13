@@ -3,11 +3,13 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal
 from uuid import uuid4
 
+import httpx
 from fastapi import APIRouter, BackgroundTasks, Body, HTTPException, Path
 from langchain_core.messages import HumanMessage
 from pydantic import BaseModel, Field
 from starlette import status
 
+from app.core.config import settings
 from app.pipelines.pipeline_a.graph import app as pipeline_a_graph
 
 router = APIRouter()
@@ -246,6 +248,38 @@ async def _run_graph(payload: PipelineAInput, call_id: str, demo_mode: bool = Fa
     return _map_graph_result(call_id, result)
 
 
+async def _push_demo_callback(call_id: str, result: PipelineAOutput) -> None:
+    if not settings.SPRING_API_URL:
+        return
+
+    url = f"{settings.SPRING_API_URL.rstrip('/')}{settings.SPRING_CALLBACK_PATH}"
+    body = {
+        "callId": call_id,
+        "detectedScenario": result.detected_scenario,
+        "riskLevel": result.risk_level,
+        "riskScore": result.risk_score,
+        "detectedKeywords": result.detected_keywords,
+        "situationSummary": result.situation_summary,
+        "toolsToCall": result.tools_to_call,
+        "finalActionsTaken": result.final_actions_taken,
+        "response": result.response,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(10.0)) as client:
+            response = await client.post(
+                url,
+                json=body,
+                headers={
+                    "Content-Type": "application/json",
+                    "X-Internal-Key": settings.SPRING_INTERNAL_API_KEY,
+                },
+            )
+            response.raise_for_status()
+        logger.info("[pipeline_a_demo] callback pushed call_id=%s url=%s", call_id, url)
+    except Exception as exc:
+        logger.warning("[pipeline_a_demo] callback push failed call_id=%s error=%s", call_id, exc)
+
+
 async def _process_job(call_id: str, payload: PipelineAInput, demo_mode: bool = False) -> None:
     _JOBS[call_id].update(status="RUNNING", updated_at=_now_iso())
     logger.info(
@@ -278,6 +312,8 @@ async def _process_job(call_id: str, payload: PipelineAInput, demo_mode: bool = 
             result.final_actions_taken,
             demo_mode,
         )
+        if demo_mode and result is not None and not result.error:
+            await _push_demo_callback(call_id, result)
     except Exception as exc:
         _JOBS[call_id].update(
             status="FAILED",
@@ -378,7 +414,7 @@ async def start_pipeline_a_demo_run(
         user_id=payload.user_id,
         pre_detected_type="UNKNOWN",
         pre_detected_risk=0.0,
-        execute_tools=False
+        execute_tools=True
     )
 
     background_tasks.add_task(_process_job, call_id, full_payload, True)

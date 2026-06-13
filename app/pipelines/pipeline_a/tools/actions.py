@@ -4,21 +4,15 @@ from app.pipelines.pipeline_a.tools.client import get, post
 
 
 async def check_family_gps(user_id: str, call_id: str, execute_tools: bool = False, **kwargs: Any) -> Dict[str, Any]:
-    contacts = await get(f"/users/{user_id}/family-contacts", execute_tools=execute_tools)
-    if contacts.get("status") == "DRY_RUN":
-        return {"tool": "check_family_gps", **contacts}
-
-    family_contacts = contacts.get("contacts", [])
-    gps_results = []
-    for contact in family_contacts:
-        target_id = contact.get("id")
-        if not target_id:
-            continue
-        cached = await get("/gps/cached", execute_tools=execute_tools, params={"userId": user_id, "targetId": target_id})
-        await post("/gps/request", execute_tools=execute_tools, body={"userId": user_id, "targetId": target_id})
-        gps_results.append({"contact": contact, "location": cached})
-
-    return {"tool": "check_family_gps", "family_locations": gps_results, "count": len(gps_results)}
+    result = await post(
+        "/ai/use/family/gps",
+        execute_tools=execute_tools,
+        body={
+            "callId": call_id,
+            "userId": user_id,
+        },
+    )
+    return {"tool": "check_family_gps", "result": result}
 
 
 async def send_family_sms_alert(
@@ -29,18 +23,18 @@ async def send_family_sms_alert(
     execute_tools: bool = False,
     **kwargs: Any,
 ) -> Dict[str, Any]:
-    body = {
-        "senderId": user_id,
-        "targetIds": kwargs.get("guardian_ids", []),
-        "payload": {
-            "type": "EMERGENCY_PHISHING_ALERT",
+    result = await post(
+        "/ai/use/notifications/family-alert",
+        execute_tools=execute_tools,
+        body={
             "callId": call_id,
+            "userId": user_id,
             "scenario": detected_scenario,
-            "title": "SSAIREN 긴급 알림",
-            "body": situation_summary,
+            "situationSummary": situation_summary,
+            "riskScore": kwargs.get("risk_score", 0.0),
+            "guardianIds": kwargs.get("guardian_ids", []),
         },
-    }
-    result = await post("/notifications/fcm", execute_tools=execute_tools, body=body)
+    )
     return {"tool": "send_family_sms_alert", "result": result}
 
 
@@ -53,7 +47,7 @@ async def notify_police(
     **kwargs: Any,
 ) -> Dict[str, Any]:
     result = await post(
-        "/police/report",
+        "/ai/use/police/report",
         execute_tools=execute_tools,
         body={
             "callId": call_id,
@@ -76,17 +70,17 @@ async def save_evidence(
     **kwargs: Any,
 ) -> Dict[str, Any]:
     result = await post(
-        f"/incidents/{call_id}/evidence",
+        "/ai/use/evidence",
         execute_tools=execute_tools,
         body={
+            "callId": call_id,
             "userId": user_id,
             "conversationText": conversation_text,
             "riskScore": risk_score,
             "scenario": detected_scenario,
-            "source": "PIPELINE_A_LANGGRAPH",
         },
     )
-    return {"tool": "save_evidence", "encrypted": True, "result": result}
+    return {"tool": "save_evidence", "result": result}
 
 
 async def verify_official_institution(
@@ -109,16 +103,15 @@ async def show_warning_banner(
     **kwargs: Any,
 ) -> Dict[str, Any]:
     result = await post(
-        "/notifications/fcm",
+        "/ai/use/notifications/warning-banner",
         execute_tools=execute_tools,
         body={
-            "senderId": user_id,
-            "targetIds": [user_id],
-            "payload": {
-                "type": "WARNING_BANNER",
-                "callId": call_id,
-                "scenario": detected_scenario,
-            },
+            "callId": call_id,
+            "userId": user_id,
+            "scenario": detected_scenario,
+            "riskScore": kwargs.get("risk_score", 0.0),
+            "situationSummary": kwargs.get("situation_summary", ""),
+            "message": "보이스피싱 의심 통화입니다. 통화를 중단하세요.",
         },
     )
     return {"tool": "show_warning_banner", "result": result}
