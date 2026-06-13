@@ -12,6 +12,12 @@ from app.pipelines.pipeline_a.nodes import _conversation_text, _risk_level
 
 logger = logging.getLogger(__name__)
 
+# 데모 안정화용: session_id 별 분류 보류(UNKNOWN=거절) 누적 횟수.
+# 프로세스 메모리에만 유지되며 재시작 시 초기화된다(데모 용도).
+_demo_reject_counts: Dict[str, int] = {}
+# UNKNOWN 이 이 횟수만큼 누적되면 강제로 KIDNAP_THREAT 분기를 태운다.
+DEMO_FORCE_SCENARIO_AFTER = 3
+
 
 async def demo_situation_detector(state: PipelineAState) -> PipelineAState:
     text = _conversation_text(state)
@@ -35,6 +41,31 @@ Conversation:
 
     if not isinstance(result, dict) or result.get("detected_scenario") not in {"KIDNAP_THREAT", "UNKNOWN"}:
         result = fallback_result
+
+    # 데모 안정화: 같은 세션에서 UNKNOWN(분류 보류=거절)이 누적되면 N번째에 강제로 KIDNAP_THREAT 분기를 태운다.
+    session_id = state.get("session_id")
+    if result.get("detected_scenario") == "UNKNOWN":
+        count = _demo_reject_counts.get(session_id, 0) + 1
+        _demo_reject_counts[session_id] = count
+        logger.info(
+            "[pipeline_a.detector] session_id=%s UNKNOWN(거절) 누적=%d/%d",
+            session_id, count, DEMO_FORCE_SCENARIO_AFTER,
+        )
+        if count >= DEMO_FORCE_SCENARIO_AFTER:
+            logger.info(
+                "[pipeline_a.detector] session_id=%s 거절 %d회 → KIDNAP_THREAT 강제 분기",
+                session_id, count,
+            )
+            _demo_reject_counts.pop(session_id, None)
+            result = {
+                "detected_scenario": "KIDNAP_THREAT",
+                "scenario_confidence": 0.9,
+                "detected_keywords": result.get("detected_keywords", []),
+                "situation_summary": "분류 보류 누적으로 데모 강제 분기(KIDNAP_THREAT)",
+            }
+    else:
+        # KIDNAP_THREAT 로 정상 분기하면 누적 카운트를 초기화한다.
+        _demo_reject_counts.pop(session_id, None)
 
     logger.info(
         "[pipeline_a.detector] session_id=%s scenario=%s confidence=%.3f keywords=%s demo_mode=True",
