@@ -1,3 +1,6 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -10,6 +13,7 @@ class Settings(BaseSettings):
     
     # API Keys
     OPENAI_API_KEY: str = ""
+    OPENAI_API_BASE: str = ""
     OPENAI_MODEL: str = "gpt-5-nano"
 
     # Optional Pipeline A external action server
