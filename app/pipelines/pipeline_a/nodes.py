@@ -11,92 +11,7 @@ from app.pipelines.pipeline_a.tools import TOOL_REGISTRY
 
 logger = logging.getLogger(__name__)
 
-DETECTOR_SYSTEM = """
-You are SSAIREN's first-stage voice phishing classifier.
-Return JSON only. No markdown.
-
-Schema:
-{
-  "detected_scenario": "KIDNAP_THREAT | INSTITUTION_IMPERSONATION | FAMILY_IMPERSONATION | SAFE_ACCOUNT_TRANSFER | UNKNOWN",
-  "scenario_confidence": 0.0,
-  "detected_keywords": ["keyword"],
-  "situation_summary": "Korean summary within 40 characters"
-}
-"""
-
-DETECTOR_DEMO_SYSTEM = """
-You are SSAIREN's first-stage voice phishing classifier (Demo Mode).
-Return JSON only. No markdown.
-
-In Demo Mode, you must classify the situation into ONLY one of these two scenarios:
-- "KIDNAP_THREAT": If there is any kidnapping threat, blackmail, threat of harm to family/friends, and demanding money.
-- "UNKNOWN": If it does not belong to KIDNAP_THREAT (e.g., normal conversation, other unrelated topics).
-
-Schema:
-{
-  "detected_scenario": "KIDNAP_THREAT | UNKNOWN",
-  "scenario_confidence": 0.0,
-  "detected_keywords": ["keyword"],
-  "situation_summary": "Korean summary within 40 characters"
-}
-"""
-
-ANALYZER_SYSTEM = """
-You are SSAIREN's risk analyzer and response planner.
-Return JSON only. No markdown.
-
-Score each risk dimension from 0.0 to 1.0.
-Risk levels:
-- ABSTAIN: 0.00 <= score < 0.40
-- LOW: 0.40 <= score < 0.55
-- MEDIUM: 0.55 <= score < 0.75
-- HIGH: 0.75 <= score <= 1.00
-
-Schema:
-{
-  "risk_score": 0.0,
-  "scenario_detail_scores": {
-    "urgency_pressure": 0.0,
-    "financial_demand": 0.0,
-    "isolation_attempt": 0.0,
-    "identity_deception": 0.0,
-    "behavioral_pattern": 0.0
-  },
-  "tool_call_reasons": [
-    {"tool": "save_evidence", "reason": "why this tool is needed", "priority": "BACKGROUND"}
-  ],
-  "tools_to_call": ["save_evidence"]
-}
-"""
-
-ANALYZER_DEMO_SYSTEM = """
-You are SSAIREN's risk analyzer and response planner (Demo Mode).
-Return JSON only. No markdown.
-
-In Demo Mode, analyze the situation ONLY under the KIDNAP_THREAT scenario context or general safety guidelines.
-Score each risk dimension from 0.0 to 1.0.
-Risk levels:
-- ABSTAIN: 0.00 <= score < 0.40
-- LOW: 0.40 <= score < 0.55
-- MEDIUM: 0.55 <= score < 0.75
-- HIGH: 0.75 <= score <= 1.00
-
-Schema:
-{
-  "risk_score": 0.0,
-  "scenario_detail_scores": {
-    "urgency_pressure": 0.0,
-    "financial_demand": 0.0,
-    "isolation_attempt": 0.0,
-    "identity_deception": 0.0,
-    "behavioral_pattern": 0.0
-  },
-  "tool_call_reasons": [
-    {"tool": "save_evidence", "reason": "why this tool is needed", "priority": "BACKGROUND"}
-  ],
-  "tools_to_call": ["save_evidence"]
-}
-"""
+from app.pipelines.pipeline_a.prompts import DETECTOR_SYSTEM, ANALYZER_SYSTEM
 
 
 def _conversation_text(state: PipelineAState) -> str:
@@ -193,58 +108,38 @@ def _has_any(text: str, keywords: List[str]) -> bool:
     return any(keyword.lower() in text for keyword in keywords)
 
 
-async def situation_detector(state: PipelineAState) -> PipelineAState:
+async def _prod_situation_detector(state: PipelineAState) -> PipelineAState:
     text = _conversation_text(state)
-    demo_mode = bool(state.get("demo_mode", False))
-
-    if demo_mode:
-        prompt = f"""
-Conversation:
-{text}
-"""
-        system_msg = DETECTOR_DEMO_SYSTEM
-        fallback_result = {
-            "detected_scenario": "UNKNOWN",
-            "scenario_confidence": 0.0,
-            "detected_keywords": [],
-            "situation_summary": "보이스피싱 단서가 부족합니다.",
-        }
-    else:
-        prompt = f"""
+    prompt = f"""
 Pre-detected type: {state.get("pre_detected_type", "UNKNOWN")}
 Pre-detected risk: {float(state.get("pre_detected_risk", 0.0)):.2f}
 
 Conversation:
 {text}
 """
-        system_msg = DETECTOR_SYSTEM
-        fallback_result = _keyword_detector(text)
+    system_msg = DETECTOR_SYSTEM
+    fallback_result = _keyword_detector(text)
 
     result = await invoke_json(
         [SystemMessage(content=system_msg), HumanMessage(content=prompt)],
         max_tokens=512,
     )
 
-    if demo_mode:
-        if not isinstance(result, dict) or result.get("detected_scenario") not in {"KIDNAP_THREAT", "UNKNOWN"}:
-            result = fallback_result
+    if not isinstance(result, dict):
+        result = fallback_result
     else:
-        if not isinstance(result, dict):
+        detected_scenario = result.get("detected_scenario", "UNKNOWN")
+        if detected_scenario not in SCENARIOS and detected_scenario != "UNKNOWN":
             result = fallback_result
-        else:
-            detected_scenario = result.get("detected_scenario", "UNKNOWN")
-            if detected_scenario not in SCENARIOS and detected_scenario != "UNKNOWN":
-                result = fallback_result
-            elif detected_scenario == "UNKNOWN" and fallback_result["detected_scenario"] != "UNKNOWN":
-                result = fallback_result
+        elif detected_scenario == "UNKNOWN" and fallback_result["detected_scenario"] != "UNKNOWN":
+            result = fallback_result
 
     logger.info(
-        "[pipeline_a.detector] call_id=%s scenario=%s confidence=%.3f keywords=%s demo_mode=%s",
+        "[pipeline_a.detector] call_id=%s scenario=%s confidence=%.3f keywords=%s demo_mode=False",
         state.get("call_id"),
         result.get("detected_scenario", "UNKNOWN"),
         float(result.get("scenario_confidence", 0.0)),
         result.get("detected_keywords", []),
-        demo_mode,
     )
 
     return {
@@ -258,27 +153,19 @@ Conversation:
     }
 
 
-async def scenario_analyzer(state: PipelineAState) -> PipelineAState:
+async def situation_detector(state: PipelineAState) -> PipelineAState:
+    if state.get("demo_mode"):
+        from app.pipelines.pipeline_a.demo_nodes import demo_situation_detector
+        return await demo_situation_detector(state)
+    return await _prod_situation_detector(state)
+
+
+async def _prod_scenario_analyzer(state: PipelineAState) -> PipelineAState:
     scenario = str(state.get("detected_scenario", "UNKNOWN"))
     scenario_cfg = SCENARIOS.get(scenario)
     recommended_tools = scenario_cfg.required_tools + scenario_cfg.optional_tools if scenario_cfg else []
-    demo_mode = bool(state.get("demo_mode", False))
 
-    if demo_mode:
-        prompt = f"""
-Scenario: {scenario}
-Scenario name: {scenario_cfg.name_kr if scenario_cfg else "unknown"}
-Confidence: {float(state.get("scenario_confidence", 0.0)):.2f}
-Detected keywords: {", ".join(state.get("detected_keywords", []))}
-Situation summary: {state.get("situation_summary", "")}
-Recommended tools: {recommended_tools}
-
-Conversation:
-{state.get("conversation_text", "")}
-"""
-        system_msg = ANALYZER_DEMO_SYSTEM
-    else:
-        prompt = f"""
+    prompt = f"""
 Scenario: {scenario}
 Scenario name: {scenario_cfg.name_kr if scenario_cfg else "unknown"}
 Confidence: {float(state.get("scenario_confidence", 0.0)):.2f}
@@ -291,7 +178,7 @@ Recommended tools: {recommended_tools}
 Conversation:
 {state.get("conversation_text", "")}
 """
-        system_msg = ANALYZER_SYSTEM
+    system_msg = ANALYZER_SYSTEM
 
     result = await invoke_json(
         [SystemMessage(content=system_msg), HumanMessage(content=prompt)],
@@ -299,37 +186,24 @@ Conversation:
     )
 
     if not isinstance(result, dict):
-        if demo_mode:
-            result = {
-                "risk_score": 0.0,
-                "scenario_detail_scores": {key: 0.0 for key in DETAIL_SCORE_KEYS},
-                "tool_call_reasons": [],
-                "tools_to_call": [],
-            }
-        else:
-            result = _fallback_analysis(state)
+        result = _fallback_analysis(state)
 
     llm_score = float(result.get("risk_score", 0.0))
-    if demo_mode:
-        blended_score = round(min(max(llm_score, 0.0), 1.0), 3)
-        tools_to_call = [tool for tool in result.get("tools_to_call", []) if tool in TOOL_REGISTRY and tool in recommended_tools]
-    else:
-        pre_detected_risk = float(state.get("pre_detected_risk", 0.0))
-        weight = scenario_cfg.risk_weight if scenario_cfg else 1.0
-        blended_score = round(min(max(llm_score, llm_score * 0.7 + pre_detected_risk * weight * 0.3), 1.0), 3)
-        tools_to_call = [tool for tool in result.get("tools_to_call", []) if tool in TOOL_REGISTRY]
+    pre_detected_risk = float(state.get("pre_detected_risk", 0.0))
+    weight = scenario_cfg.risk_weight if scenario_cfg else 1.0
+    blended_score = round(min(max(llm_score, llm_score * 0.7 + pre_detected_risk * weight * 0.3), 1.0), 3)
+    tools_to_call = [tool for tool in result.get("tools_to_call", []) if tool in TOOL_REGISTRY]
 
     detail_scores = result.get("scenario_detail_scores", {})
     detail_scores = {key: float(detail_scores.get(key, 0.0)) for key in DETAIL_SCORE_KEYS}
 
     logger.info(
-        "[pipeline_a.analyzer] call_id=%s scenario=%s risk_level=%s risk_score=%.3f tools=%s demo_mode=%s",
+        "[pipeline_a.analyzer] call_id=%s scenario=%s risk_level=%s risk_score=%.3f tools=%s demo_mode=False",
         state.get("call_id"),
         scenario,
         _risk_level(blended_score),
         blended_score,
         tools_to_call,
-        demo_mode,
     )
 
     return {
@@ -341,6 +215,13 @@ Conversation:
         "tools_to_call": tools_to_call,
         "error": None,
     }
+
+
+async def scenario_analyzer(state: PipelineAState) -> PipelineAState:
+    if state.get("demo_mode"):
+        from app.pipelines.pipeline_a.demo_nodes import demo_scenario_analyzer
+        return await demo_scenario_analyzer(state)
+    return await _prod_scenario_analyzer(state)
 
 
 def route_by_risk(state: PipelineAState) -> str:
