@@ -1,0 +1,117 @@
+name: SSIREN AI Agent CI/CD
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Generate Version Tag
+        id: prep
+        run: |
+          VERSION="v$(date +%Y%m%d)-$(echo ${GITHUB_SHA} | cut -c1-7)"
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+          
+          # Convert repository name to lowercase to prevent Docker build errors
+          REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          echo "IMAGE_NAME=ghcr.io/${REPO_LOWER}" >> $GITHUB_ENV
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry (GHCR)
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          # Fallback to GHCR_PAT if GITHUB_TOKEN write access is blocked by Organization policies
+          password: ${{ secrets.GHCR_PAT || secrets.GITHUB_TOKEN }}
+
+
+
+
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:latest
+            ${{ env.IMAGE_NAME }}:${{ env.VERSION }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+    outputs:
+      image_name: ${{ env.IMAGE_NAME }}
+      version: ${{ env.VERSION }}
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to EC2 via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          GHCR_PAT: ${{ secrets.GHCR_PAT }}
+          GITHUB_ACTOR: ${{ github.actor }}
+          IMAGE_NAME: ${{ needs.build-and-push.outputs.image_name }}
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          envs: GHCR_PAT, GITHUB_ACTOR, IMAGE_NAME
+          script_stop: true
+          script: |
+            # Create deployment directory if it doesn't exist
+            mkdir -p /home/ubuntu/ai-agent
+            cd /home/ubuntu/ai-agent
+
+            # Log in to GHCR on EC2 if GHCR_PAT is provided (needed for private repos)
+            if [ -n "$GHCR_PAT" ]; then
+              echo "Logging in to GHCR..."
+              echo "$GHCR_PAT" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+            else
+              echo "GHCR_PAT not set, skipping docker login (assuming public repository)..."
+            fi
+
+            # Export the exact image path for Docker Compose to read
+            export GHCR_IMAGE="$IMAGE_NAME:latest"
+
+            # Create or update a local docker-compose.yml on EC2
+            # Since Compose is configured, we pull the updated image and restart
+            # Ensure the docker-compose.yml file is copied over or updated
+            # Below we write a script to ensure docker-compose.yml is always fresh
+            cat << 'EOF' > docker-compose.yml
+            services:
+              app:
+                image: ${GHCR_IMAGE}
+                container_name: ssiren-ai-app
+                restart: always
+                ports:
+                  - "8000:8000"
+                env_file:
+                  - .env
+                logging:
+                  driver: "json-file"
+                  options:
+                    max-size: "10m"
+                    max-file: "3"
+            EOF
+
+            # Pull latest image and recreate container
+            docker compose pull
+            docker compose up -d
+
+            # Clean up old unused docker images to free up space
+            docker image prune -f

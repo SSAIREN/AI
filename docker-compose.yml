@@ -1,0 +1,32 @@
+services:
+  app:
+    # Docker Image from GitHub Container Registry (GHCR)
+    # The variable ${GHCR_IMAGE} will be dynamically injected by GitHub Actions,
+    # or you can write your image path directly: ghcr.io/<owner>/<repo>:latest
+    image: ${GHCR_IMAGE:-ghcr.io/ssairen/ai-agent:latest}
+    container_name: ssiren-ai-app
+    restart: always
+    ports:
+      - "8000:8000"
+    # Loads local .env file located in the same directory on EC2
+    env_file:
+      - .env
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Optional Redis Service for Session/Cache storage
+  # To enable, uncomment the block below.
+  # redis:
+  #   image: redis:7.2-alpine
+  #   container_name: ssiren-ai-redis
+  #   restart: always
+  #   ports:
+  #     - "6379:6379"
+  #   volumes:
+  #     - redis_data:/data
+
+# volumes:
+#   redis_data:
