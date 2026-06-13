@@ -88,6 +88,8 @@ Conversation:
 
     llm_score = float(result.get("risk_score", 0.0))
     blended_score = round(min(max(llm_score, 0.0), 1.0), 3)
+    # TODO: 임시 - 항상 0.9 강제 (테스트용). 원복 필요.
+    blended_score = 0.9
 
     if scenario == "KIDNAP_THREAT":
         # Force all 5 demo tools for KIDNAP_THREAT scenario
