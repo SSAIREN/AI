@@ -9,6 +9,10 @@ from app.pipelines.pipeline_a.tools.actions import (
     show_warning_banner,
     verify_family_location,
     verify_official_institution,
+    verify_suspicious_account,
+    check_spam_phone_number,
+    send_emergency_email_alert,
+    generate_safety_guideline,
 )
 
 ToolFn = Callable[..., Awaitable[Dict[str, Any]]]
@@ -23,4 +27,8 @@ TOOL_REGISTRY: Dict[str, ToolFn] = {
     "show_warning_banner": show_warning_banner,
     "verify_family_location": verify_family_location,
     "show_transfer_warning": show_transfer_warning,
+    "verify_suspicious_account": verify_suspicious_account,
+    "check_spam_phone_number": check_spam_phone_number,
+    "send_emergency_email_alert": send_emergency_email_alert,
+    "generate_safety_guideline": generate_safety_guideline,
 }
