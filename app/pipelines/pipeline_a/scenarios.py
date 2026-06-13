@@ -50,6 +50,33 @@ SCENARIOS: Dict[str, ScenarioConfig] = {
         optional_tools=["send_family_sms_alert", "notify_police"],
         risk_weight=0.95,
     ),
+    "LOAN_FRAUD": ScenarioConfig(
+        scenario_id="LOAN_FRAUD",
+        name_kr="대출 사기형",
+        description="저금리 대출, 대환 대출을 미끼로 수수료나 기존 채무 즉시 상환을 유도하는 유형",
+        keywords=["대출", "저금리", "수수료", "상환", "정부 지원", "대환 대출", "신용 등급", "보증금"],
+        required_tools=["verify_suspicious_account", "show_warning_banner", "save_evidence"],
+        optional_tools=["send_family_sms_alert", "notify_police"],
+        risk_weight=0.85,
+    ),
+    "MESSENGER_PHISHING": ScenarioConfig(
+        scenario_id="MESSENGER_PHISHING",
+        name_kr="메신저 피싱형",
+        description="카카오톡 등 메신저로 접근해 상품권 구매 대행이나 급전 이체, 신분증 사진을 요구하는 유형",
+        keywords=["문화상품권", "구글 기프트카드", "상품권 구매", "바빠", "신분증", "계좌 이체", "비밀번호"],
+        required_tools=["show_transfer_warning", "send_family_sms_alert", "save_evidence"],
+        optional_tools=["check_spam_phone_number"],
+        risk_weight=0.9,
+    ),
+    "DELIVERY_PHISHING": ScenarioConfig(
+        scenario_id="DELIVERY_PHISHING",
+        name_kr="택배/미끼 링크형",
+        description="택배 주소지 오류나 청첩장, 부고장 링크를 보내 악성 앱(APK) 설치나 개인정보 입력을 유도하는 유형",
+        keywords=["택배", "주소 불명", "반송", "청첩장", "부고", "장례식", "링크", "설치", "인증", "apk"],
+        required_tools=["check_spam_phone_number", "show_warning_banner", "save_evidence"],
+        optional_tools=["send_family_sms_alert"],
+        risk_weight=0.8,
+    ),
 }
 
 
